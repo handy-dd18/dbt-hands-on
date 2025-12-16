@@ -1,0 +1,4 @@
+status_code,status_label,description
+completed,完了,注文が完了した状態
+pending,処理中,注文が処理中の状態
+cancelled,キャンセル,注文がキャンセルされた状態

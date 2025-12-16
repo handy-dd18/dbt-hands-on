@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: customer_orders
+    description: "顧客ごとの注文サマリー（マートモデル）"
+    columns:
+      - name: customer_id
+        description: "顧客ID"
+        tests:
+          - unique
+          - not_null
+      - name: customer_tier
+        description: "顧客ランク（Gold/Silver/Bronze）"
+        tests:
+          - accepted_values:
+              values: ['Gold', 'Silver', 'Bronze']
+
+  - name: order_status_summary
+    description: "注文ステータス別サマリー"
+    columns:
+      - name: status
+        description: "注文ステータスコード"
+        tests:
+          - unique
+          - not_null

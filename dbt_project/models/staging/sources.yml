@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: raw_data
+    description: "ECサイトの生データ"
+    database: dbt_handson
+    schema: raw_data
+    tables:
+      - name: customers
+        description: "顧客マスターテーブル"
+        columns:
+          - name: customer_id
+            description: "顧客ID（主キー）"
+          - name: first_name
+            description: "名"
+          - name: last_name
+            description: "姓"
+          - name: email
+            description: "メールアドレス"
+          - name: created_at
+            description: "作成日時"
+
+      - name: orders
+        description: "注文トランザクションテーブル"
+        columns:
+          - name: order_id
+            description: "注文ID（主キー）"
+          - name: customer_id
+            description: "顧客ID（外部キー）"
+          - name: order_date
+            description: "注文日"
+          - name: status
+            description: "注文ステータス"
+          - name: amount
+            description: "注文金額"

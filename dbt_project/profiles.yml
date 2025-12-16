@@ -1,0 +1,12 @@
+dbt_handson:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: postgres
+      user: postgres
+      password: postgres
+      port: 5432
+      dbname: dbt_handson
+      schema: dbt_dev
+      threads: 4

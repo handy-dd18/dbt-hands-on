@@ -1,0 +1,13 @@
+version: 2
+
+seeds:
+  - name: order_status_master
+    description: "注文ステータスのマスターデータ"
+    columns:
+      - name: status_code
+        description: "ステータスコード"
+        tests:
+          - unique
+          - not_null
+      - name: status_label
+        description: "ステータスの日本語ラベル"

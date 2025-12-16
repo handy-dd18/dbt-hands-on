@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: "顧客データのステージングモデル"
+    columns:
+      - name: customer_id
+        description: "顧客ID"
+        tests:
+          - unique
+          - not_null
+      - name: full_name
+        description: "フルネーム"
+      - name: email
+        description: "メールアドレス"
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_orders
+    description: "注文データのステージングモデル"
+    columns:
+      - name: order_id
+        description: "注文ID"
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: "顧客ID"
+        tests:
+          - not_null
+          - relationships:
+              to: ref('stg_customers')
+              field: customer_id
+      - name: status
+        description: "注文ステータス"
+        tests:
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled']
