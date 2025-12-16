@@ -181,6 +181,18 @@ docker compose up -d
 
 PostgreSQLとdbtコンテナが起動します。
 
+> **トラブルシューティング**
+>
+> `dependency failed to start: container dbt_postgres exited (1)` のエラーが発生した場合、
+> `init/01_create_tables.sql` のパーミッションが不足している可能性があります。
+> 以下のコマンドで修正してください：
+>
+> ```bash
+> chmod 644 init/01_create_tables.sql
+> docker compose down -v
+> docker compose up -d
+> ```
+
 ### 1.3 dbtコンテナに入る
 
 ```bash
