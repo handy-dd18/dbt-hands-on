@@ -63,6 +63,22 @@ dbtプロジェクトは、**設定ファイル**と**機能別ディレクト�
 | `dbt_project.yml` | プロジェクト名やディレクトリ構成を定義。dbtがどこに何があるかを認識するために必要です |
 | `profiles.yml` | データベースへの接続情報（ホスト名、ユーザー名、パスワードなど）。通常は秘密情報を含むためGit管理外にしますが、学習用のため同梱しています |
 
+> **profiles.ymlの配置場所について**
+>
+> dbt CLIは、デフォルトで `~/.dbt/profiles.yml`（ホームディレクトリ直下の`.dbt`フォルダ）を参照します。
+> これは、パスワードなどの秘密情報がGitリポジトリにコミットされるのを防ぐためです。
+>
+> **profiles.ymlの検索順序：**
+> 1. `--profiles-dir` オプションで指定したディレクトリ
+> 2. `DBT_PROFILES_DIR` 環境変数で指定したディレクトリ
+> 3. カレントディレクトリ（dbt 1.3以降）
+> 4. `~/.dbt/` ディレクトリ（デフォルト）
+>
+> このハンズオンでは、`docker-compose.yml`で `DBT_PROFILES_DIR=/dbt` を設定しているため、
+> プロジェクト内の `profiles.yml` が使用されます。
+>
+> 参考：[About profiles.yml | dbt Developer Hub](https://docs.getdbt.com/docs/core/connect-data-platform/profiles.yml)
+
 **機能別ディレクトリ：**
 
 | ディレクトリ | 役割 | なぜ分けるのか |
