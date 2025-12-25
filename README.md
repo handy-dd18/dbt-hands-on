@@ -519,21 +519,149 @@ models:
 
 Seedは、CSVファイルをデータベースにロードする機能です。
 
-### 3.1 Seedファイルを確認
+### 3.1 Seedとは？
+
+**Seed**は、コードで管理したい小さなマスターデータ（ステータス定義、カテゴリマスターなど）をCSVファイルからデータベーステーブルに変換する機能です。
+
+**Seedが適しているケース：**
+- ステータスコードと表示名のマッピング
+- 国コードや地域コードのマスター
+- 頻繁に変更されない小規模な参照データ
+
+**Seedが適さないケース：**
+- 大量のデータ（数千行以上）
+- 頻繁に更新されるデータ
+- 外部システムから取得するデータ
+
+### 3.2 `dbt seed` コマンドの動作
+
+```
+dbt seed 実行時の流れ
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. dbt_project.yml の seed-paths を参照                         │
+│    → seeds/ ディレクトリを探す                                   │
+│                                                                 │
+│ 2. seeds/ 内のCSVファイルを検索                                  │
+│    → order_status_master.csv を発見                             │
+│                                                                 │
+│ 3. CSVファイル名からテーブル名を決定                              │
+│    → order_status_master（拡張子を除いた名前）                   │
+│                                                                 │
+│ 4. profiles.yml の接続先スキーマにテーブルを作成                  │
+│    → dbt_dev.order_status_master テーブルが作成される            │
+│                                                                 │
+│ 5. CSVの内容をテーブルにINSERT                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 参照されるファイルの関係
+
+```
+dbt_project.yml                 ← Seedの格納場所を定義
+    │
+    │  seed-paths: ["seeds"]
+    ▼
+seeds/
+├── order_status_master.csv     ← 実際のデータ（CSVファイル）
+└── schema.yml                  ← テスト・ドキュメント定義（任意）
+```
+
+#### dbt_project.yml（Seed関連の設定）
+
+```yaml
+seed-paths: ["seeds"]    # CSVファイルを探すディレクトリ
+```
+
+#### seeds/order_status_master.csv（マスターデータ）
+
+```csv
+status_code,status_label,description
+completed,完了,注文が完了した状態
+pending,処理中,注文が処理中の状態
+cancelled,キャンセル,注文がキャンセルされた状態
+```
+
+**ポイント：**
+- 1行目がカラム名（テーブルの列名になる）
+- 2行目以降がデータ
+- ファイル名（`order_status_master`）がそのままテーブル名になる
+
+#### seeds/schema.yml（テスト・ドキュメント定義）
+
+```yaml
+version: 2
+
+seeds:
+  - name: order_status_master              # CSVファイル名と一致させる
+    description: "注文ステータスのマスターデータ"
+    columns:
+      - name: status_code
+        description: "ステータスコード"
+        tests:
+          - unique                         # 重複チェック
+          - not_null                       # NULLチェック
+      - name: status_label
+        description: "ステータスの日本語ラベル"
+```
+
+**ポイント：**
+- `seeds:`キーでSeed用の定義を記述（`models:`とは異なる）
+- モデルと同様にテストを定義できる
+
+### 3.4 Seedファイルを確認
 
 ```bash
 cat seeds/order_status_master.csv
 ```
 
-注文ステータスのマスターデータ（CSVファイル）が定義されています。
-
-### 3.2 Seedを実行
+### 3.5 Seedを実行
 
 ```bash
 dbt seed
 ```
 
-CSVファイルがPostgreSQLのテーブルとして作成されます。
+出力例：
+```
+Running with dbt=1.x.x
+Found 4 models, 1 seed, ...
+
+Concurrency: 4 threads (target='dev')
+
+1 of 1 START seed file dbt_dev.order_status_master
+1 of 1 OK loaded seed file dbt_dev.order_status_master
+
+Finished running 1 seed in 0.50s.
+```
+
+### 3.6 作成されたテーブルの確認
+
+Seedを実行すると、以下のテーブルが作成されます：
+
+| 項目 | 値 |
+|------|-----|
+| データベース | dbt_handson |
+| スキーマ | dbt_dev（profiles.ymlで指定） |
+| テーブル名 | order_status_master（CSVファイル名） |
+| フルパス | `dbt_handson.dbt_dev.order_status_master` |
+
+### 3.7 モデルからSeedを参照する方法
+
+Seedで作成したテーブルは、`{{ ref() }}`関数で参照できます：
+
+```sql
+-- marts/order_status_summary.sql より
+SELECT * FROM {{ ref('order_status_master') }}
+```
+
+dbtがコンパイルすると、以下のSQLに変換されます：
+
+```sql
+SELECT * FROM dbt_handson.dbt_dev.order_status_master
+```
+
+**ref()を使う理由：**
+- スキーマ名を直接書かなくて良い（環境ごとに自動で切り替わる）
+- 依存関係が自動的に記録される（Seedが先に実行される）
 
 ---
 
