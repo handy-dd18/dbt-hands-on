@@ -213,34 +213,69 @@ dbt debug
 
 ## Step 2: dbtプロジェクトの構造を理解する（5分）
 
-### 2.1 主要ファイルの確認
+### 2.1 設定ファイル
 
-**dbt_project.yml** - プロジェクトの設定ファイル
+#### dbt_project.yml - プロジェクトの設定ファイル
 
 ```yaml
-name: 'dbt_handson'         # プロジェクト名
-version: '1.0.0'
+name: 'dbt_handson'           # プロジェクト名
+version: '1.0.0'              # バージョン
+config-version: 2             # 設定ファイルのフォーマットバージョン
 
-model-paths: ["models"]      # モデルの格納場所
-seed-paths: ["seeds"]        # シードデータの格納場所
-test-paths: ["tests"]        # テストの格納場所
+profile: 'dbt_handson'        # profiles.ymlのどのプロファイルを使うか
+
+model-paths: ["models"]       # モデル（SQL）の格納場所
+analysis-paths: ["analyses"]  # 分析用SQLの格納場所
+test-paths: ["tests"]         # カスタムテストの格納場所
+seed-paths: ["seeds"]         # CSVデータの格納場所
+macro-paths: ["macros"]       # マクロ（関数）の格納場所
+snapshot-paths: ["snapshots"] # スナップショットの格納場所
+
+clean-targets:                # dbt cleanで削除する対象
+  - "target"
+  - "dbt_packages"
+
+models:
+  dbt_handson:                # プロジェクト名に対応
+    staging:
+      +materialized: view     # staging層はViewとして作成（軽量・リアルタイム）
+    marts:
+      +materialized: table    # marts層はTableとして作成（高速クエリ）
 ```
 
-**profiles.yml** - データベース接続設定
+**設定項目の意味：**
+
+| 設定 | 意味 |
+|------|------|
+| `profile` | profiles.ymlのどの接続設定を使うか指定 |
+| `*-paths` | 各種ファイルをどこに置くかを定義 |
+| `+materialized: view` | ストレージを使わないビュー（生データ変更が即反映） |
+| `+materialized: table` | 実テーブル作成（クエリ高速化） |
+
+#### profiles.yml - データベース接続設定
 
 ```yaml
-dbt_handson:
-  target: dev
+dbt_handson:                  # プロファイル名（dbt_project.ymlのprofileと対応）
+  target: dev                 # デフォルトで使う環境
   outputs:
-    dev:
-      type: postgres
-      host: postgres
-      user: postgres
-      password: postgres
-      port: 5432
-      dbname: dbt_handson
-      schema: dbt_dev
+    dev:                      # 開発環境の設定
+      type: postgres          # データベースの種類
+      host: postgres          # ホスト名（docker-compose内のサービス名）
+      user: postgres          # ユーザー名
+      password: postgres      # パスワード
+      port: 5432              # ポート番号
+      dbname: dbt_handson     # データベース名
+      schema: dbt_dev         # スキーマ名（dbtが作成するオブジェクトの配置先）
+      threads: 4              # 並列実行数
 ```
+
+**設定項目の意味：**
+
+| 設定 | 意味 |
+|------|------|
+| `target: dev` | 本番環境(`prod`)と開発環境(`dev`)を切り替え可能 |
+| `schema: dbt_dev` | dbtが作るテーブル/ビューはこのスキーマに作成される |
+| `threads: 4` | 4つのモデルを同時に実行可能（高速化） |
 
 ### 2.2 モデルの階層構造
 
@@ -256,6 +291,227 @@ models/
     ├── order_status_summary.sql
     └── schema.yml
 ```
+
+### 2.3 ソース定義ファイル
+
+#### sources.yml - 外部データソースの定義
+
+```yaml
+version: 2
+
+sources:
+  - name: raw_data                      # ソースの名前（参照時に使用）
+    description: "ECサイトの生データ"
+    database: dbt_handson               # データベース名
+    schema: raw_data                    # スキーマ名
+    tables:
+      - name: customers                 # テーブル名
+        description: "顧客マスターテーブル"
+        columns:
+          - name: customer_id
+            description: "顧客ID（主キー）"
+          # ... 他のカラム定義
+
+      - name: orders
+        description: "注文トランザクションテーブル"
+        columns:
+          - name: order_id
+            description: "注文ID（主キー）"
+          # ... 他のカラム定義
+```
+
+**このファイルの役割：**
+
+- **dbtが管理していない外部テーブル**の所在を定義
+- SQLモデル内で `{{ source('raw_data', 'customers') }}` と書くと、`raw_data.customers` テーブルを参照
+- ドキュメント生成時にリネージ（依存関係）が可視化される
+
+### 2.4 ステージング層（staging/）
+
+#### stg_customers.sql - 顧客データのクリーニング
+
+```sql
+SELECT
+    customer_id,
+    first_name,
+    last_name,
+    first_name || ' ' || last_name AS full_name,  -- 姓名を結合して新カラム作成
+    email,
+    created_at
+FROM {{ source('raw_data', 'customers') }}        -- sources.ymlで定義したソースを参照
+```
+
+**やっていること：**
+
+- 生データ（raw_data.customers）を読み込む
+- `full_name` という派生カラムを追加
+- **View** として作成（dbt_project.ymlで設定）
+
+#### stg_orders.sql - 注文データのクリーニング
+
+```sql
+SELECT
+    order_id,
+    customer_id,
+    order_date,
+    status,
+    amount
+FROM {{ source('raw_data', 'orders') }}
+```
+
+**やっていること：**
+
+- 生データをそのまま整形（この例ではシンプルにカラム選択のみ）
+- 実務では型変換やNULL処理などを行う
+
+#### schema.yml - ステージング層のテスト・ドキュメント
+
+```yaml
+version: 2
+
+models:
+  - name: stg_customers
+    description: "顧客データのステージングモデル"
+    columns:
+      - name: customer_id
+        tests:
+          - unique              # 重複がないことをチェック
+          - not_null            # NULLがないことをチェック
+      - name: email
+        tests:
+          - unique
+          - not_null
+
+  - name: stg_orders
+    columns:
+      - name: order_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:      # 外部キー制約のチェック
+              to: ref('stg_customers')
+              field: customer_id
+      - name: status
+        tests:
+          - accepted_values:    # 許可された値のみかチェック
+              values: ['completed', 'pending', 'cancelled']
+```
+
+**テストの種類：**
+
+| テスト | 意味 |
+|--------|------|
+| `unique` | 値が重複していないこと |
+| `not_null` | NULLがないこと |
+| `relationships` | 参照先に値が存在すること（外部キー整合性） |
+| `accepted_values` | 指定した値のみであること |
+
+### 2.5 マート層（marts/）
+
+#### customer_orders.sql - 顧客ごとの注文サマリー
+
+```sql
+WITH customers AS (
+    SELECT * FROM {{ ref('stg_customers') }}   -- ステージングモデルを参照
+),
+orders AS (
+    SELECT * FROM {{ ref('stg_orders') }}
+),
+customer_order_summary AS (
+    SELECT
+        c.customer_id,
+        c.full_name,
+        c.email,
+        COUNT(o.order_id) AS total_orders,           -- 注文回数
+        COALESCE(SUM(CASE WHEN o.status = 'completed'
+                     THEN o.amount ELSE 0 END), 0) AS total_spent,  -- 完了注文の合計金額
+        MIN(o.order_date) AS first_order_date,       -- 初回注文日
+        MAX(o.order_date) AS last_order_date         -- 最新注文日
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    GROUP BY c.customer_id, c.full_name, c.email
+)
+SELECT
+    *,
+    CASE
+        WHEN total_spent >= 3000 THEN 'Gold'         -- 顧客ランク判定
+        WHEN total_spent >= 1500 THEN 'Silver'
+        ELSE 'Bronze'
+    END AS customer_tier
+FROM customer_order_summary
+```
+
+**ポイント：**
+
+- `{{ ref('stg_customers') }}` → 他のdbtモデルを参照（依存関係を自動解決）
+- ビジネスロジック（顧客ランク）を適用
+- **Table** として作成（実テーブルで高速クエリ）
+
+#### order_status_summary.sql - 注文ステータス別サマリー
+
+```sql
+WITH orders AS (
+    SELECT * FROM {{ ref('stg_orders') }}
+),
+status_lookup AS (
+    SELECT * FROM {{ ref('order_status_master') }}   -- Seedテーブルを参照
+)
+SELECT
+    o.status,
+    sl.status_label,                    -- 日本語ラベル（Seedから取得）
+    COUNT(*) AS order_count,
+    SUM(o.amount) AS total_amount,
+    AVG(o.amount) AS avg_amount
+FROM orders o
+LEFT JOIN status_lookup sl ON o.status = sl.status_code
+GROUP BY o.status, sl.status_label
+ORDER BY order_count DESC
+```
+
+**ポイント：**
+
+- `{{ ref('order_status_master') }}` → Seedで作成したマスターテーブルを参照
+- ステータスコードに日本語ラベルを付与
+
+#### schema.yml - マート層のテスト・ドキュメント
+
+```yaml
+version: 2
+
+models:
+  - name: customer_orders
+    description: "顧客ごとの注文サマリー（マートモデル）"
+    columns:
+      - name: customer_id
+        tests:
+          - unique
+          - not_null
+      - name: customer_tier
+        tests:
+          - accepted_values:
+              values: ['Gold', 'Silver', 'Bronze']   # ランクが3種類のみか確認
+
+  - name: order_status_summary
+    columns:
+      - name: status
+        tests:
+          - unique
+          - not_null
+```
+
+### 2.6 ファイルの役割まとめ
+
+| ファイル | 役割 |
+|----------|------|
+| `dbt_project.yml` | プロジェクト全体の設定（名前、パス、マテリアライゼーション） |
+| `profiles.yml` | DB接続情報（ホスト、認証情報、スキーマ） |
+| `sources.yml` | 外部データソースの定義（dbt管理外テーブル） |
+| `stg_*.sql` | 生データのクリーニング・標準化（View） |
+| `marts/*.sql` | ビジネスロジック適用・集計（Table） |
+| `schema.yml` | テスト定義とドキュメント |
 
 ---
 
