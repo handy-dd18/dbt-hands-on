@@ -727,7 +727,55 @@ Concurrency: 4 threads (target='dev')
 Finished running 2 view models, 2 table models
 ```
 
-### 4.4 特定のモデルだけ実行
+### 4.4 実行順序の仕組み
+
+上記の出力を見ると、1と2が先に並列実行され、その後3と4が並列実行されています。
+この順序は**特定の設定ファイルではなく、各SQLファイル内の `{{ ref() }}` と `{{ source() }}` で自動的に決まります**。
+
+#### 依存関係による実行順序
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  【第1フェーズ】1と2が並列実行                                │
+│                                                             │
+│  stg_customers.sql → {{ source('raw_data', 'customers') }}  │
+│  stg_orders.sql    → {{ source('raw_data', 'orders') }}     │
+│                                                             │
+│  → どちらも source（生データ）のみを参照                      │
+│  → 他のモデルに依存しない → 並列実行可能                      │
+└─────────────────────────────────────────────────────────────┘
+                           ↓ 完了後
+┌─────────────────────────────────────────────────────────────┐
+│  【第2フェーズ】3と4が並列実行                                │
+│                                                             │
+│  customer_orders.sql      → {{ ref('stg_customers') }}      │
+│                           → {{ ref('stg_orders') }}         │
+│                                                             │
+│  order_status_summary.sql → {{ ref('stg_orders') }}         │
+│                           → {{ ref('order_status_master') }}│
+│                                                             │
+│  → ステージング層に依存 → 第1フェーズ完了後に実行             │
+│  → 3と4の間には相互依存がない → 並列実行可能                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 依存関係が定義されている場所
+
+| モデル | ファイル | 依存先（ref/source） |
+|--------|----------|---------------------|
+| stg_customers | `models/staging/stg_customers.sql` | `source('raw_data', 'customers')` |
+| stg_orders | `models/staging/stg_orders.sql` | `source('raw_data', 'orders')` |
+| customer_orders | `models/marts/customer_orders.sql` | `ref('stg_customers')`, `ref('stg_orders')` |
+| order_status_summary | `models/marts/order_status_summary.sql` | `ref('stg_orders')`, `ref('order_status_master')` |
+
+#### ポイント
+
+- **順序定義ファイルは存在しない** - dbtがSQLを解析して自動的に依存関係グラフ（DAG）を構築
+- `{{ ref('モデル名') }}` を書くと、そのモデルへの依存が発生
+- 依存関係のないモデル同士は並列実行される
+- 最大並列数は `profiles.yml` の `threads: 4` で制御
+
+### 4.5 特定のモデルだけ実行
 
 ```bash
 dbt run --select stg_customers
