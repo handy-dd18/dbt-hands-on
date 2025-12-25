@@ -824,9 +824,98 @@ columns:
 dbt test
 ```
 
+出力例：
+```
+Running with dbt=1.x.x
+Found 4 models, 17 data tests, 1 seed, 2 sources, 460 macros
+
+Concurrency: 4 threads (target='dev')
+
+1 of 17 START test accepted_values_customer_orders_customer_tier__Gold__Silver__Bronze
+2 of 17 START test accepted_values_stg_orders_status__completed__pending__cancelled
+3 of 17 START test assert_positive_order_amounts
+...
+17 of 17 PASS unique_stg_orders_order_id
+
+Finished running 17 data tests in 0 hours 0 minutes and 2.51 seconds (2.51s).
+
+Done. PASS=17 WARN=0 ERROR=0 SKIP=0 TOTAL=17
+```
+
 すべてのテストが `PASS` になれば成功です。
 
-### 5.4 カスタムテスト
+### 5.4 テスト名の読み方
+
+dbtのテスト名は以下の規則で自動生成されます：
+
+```
+{テスト種類}_{モデル名}_{カラム名}[__{値}...]
+
+例：accepted_values_stg_orders_status__completed__pending__cancelled
+    └─────┬─────┘ └────┬────┘ └─┬─┘ └───────────┬───────────────┘
+      テスト種類    モデル名   カラム名      許可される値（__区切り）
+```
+
+### 5.5 テストと定義ファイルの対応
+
+17個のテストがどの定義ファイルに対応するかを示します。
+
+#### カスタムテスト（tests/フォルダ）
+
+| テスト名 | 定義ファイル |
+|----------|--------------|
+| `assert_positive_order_amounts` | `tests/assert_positive_order_amounts.sql` |
+
+#### ステージング層（models/staging/schema.yml）
+
+| テスト名 | モデル.カラム | テスト種類 |
+|----------|---------------|------------|
+| `not_null_stg_customers_customer_id` | stg_customers.customer_id | not_null |
+| `unique_stg_customers_customer_id` | stg_customers.customer_id | unique |
+| `not_null_stg_customers_email` | stg_customers.email | not_null |
+| `unique_stg_customers_email` | stg_customers.email | unique |
+| `not_null_stg_orders_order_id` | stg_orders.order_id | not_null |
+| `unique_stg_orders_order_id` | stg_orders.order_id | unique |
+| `not_null_stg_orders_customer_id` | stg_orders.customer_id | not_null |
+| `relationships_stg_orders_customer_id__...` | stg_orders.customer_id | relationships |
+| `accepted_values_stg_orders_status__...` | stg_orders.status | accepted_values |
+
+#### マート層（models/marts/schema.yml）
+
+| テスト名 | モデル.カラム | テスト種類 |
+|----------|---------------|------------|
+| `not_null_customer_orders_customer_id` | customer_orders.customer_id | not_null |
+| `unique_customer_orders_customer_id` | customer_orders.customer_id | unique |
+| `accepted_values_customer_orders_customer_tier__...` | customer_orders.customer_tier | accepted_values |
+| `not_null_order_status_summary_status` | order_status_summary.status | not_null |
+| `unique_order_status_summary_status` | order_status_summary.status | unique |
+
+#### Seed（seeds/schema.yml）
+
+| テスト名 | モデル.カラム | テスト種類 |
+|----------|---------------|------------|
+| `not_null_order_status_master_status_code` | order_status_master.status_code | not_null |
+| `unique_order_status_master_status_code` | order_status_master.status_code | unique |
+
+#### 定義ファイルとテスト名の対応例
+
+```yaml
+# models/staging/schema.yml
+models:
+  - name: stg_orders
+    columns:
+      - name: order_id
+        tests:
+          - unique    # → unique_stg_orders_order_id
+          - not_null  # → not_null_stg_orders_order_id
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['completed', 'pending', 'cancelled']
+              # → accepted_values_stg_orders_status__completed__pending__cancelled
+```
+
+### 5.6 カスタムテスト
 
 **tests/assert_positive_order_amounts.sql**
 
